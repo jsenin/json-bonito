@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Json Bonito",
-  "version": "3.0.0",
+  "version": "0.1.0",
   "description": "Beautiful JSON formatter — opens in a full tab for comfortable editing.",
   "icons": {
     "48":  "icon48.png",

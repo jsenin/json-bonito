@@ -1,16 +1,19 @@
 'use strict';
 
 /* ── DOM ── */
-const inputEl  = document.getElementById('input');
-const outputEl = document.getElementById('output');
-const errorPill = document.getElementById('error-pill');
-const errorMsg  = document.getElementById('error-msg');
-const sDot      = document.getElementById('s-dot');
-const sText     = document.getElementById('s-text');
-const sSize     = document.getElementById('s-size');
-const lnIn      = document.getElementById('ln-in');
-const lnOut     = document.getElementById('ln-out');
-const indentSel = document.getElementById('indent-size');
+const inputEl      = document.getElementById('input');
+const outputEl     = document.getElementById('output');
+const errBadge     = document.getElementById('err-badge');
+const errBadgeText = document.getElementById('err-badge-text');
+const errModalEl   = document.getElementById('modal-error');
+const errModalMsg  = document.getElementById('err-modal-msg');
+const sDot         = document.getElementById('s-dot');
+const sText        = document.getElementById('s-text');
+const sSize        = document.getElementById('s-size');
+const lnIn         = document.getElementById('ln-in');
+const lnOut        = document.getElementById('ln-out');
+const indentSel    = document.getElementById('indent-size');
+const tagFormatted = document.getElementById('tag-formatted');
 
 /* ════════════════════════════════════════
    THEME
@@ -84,8 +87,9 @@ function fmtBytes(n) {
 }
 
 function showError(msg) {
-  errorMsg.textContent = msg;
-  errorPill.classList.add('visible');
+  errModalMsg.textContent = msg;
+  errBadgeText.textContent = msg.split(' — ')[0]; // show location, e.g. "Line 3, col 5"
+  errBadge.classList.add('visible');
   sDot.className = 's-dot err';
   sText.textContent = 'Parse error';
   sSize.textContent = '';
@@ -94,7 +98,8 @@ function showError(msg) {
 }
 
 function clearError() {
-  errorPill.classList.remove('visible');
+  errBadge.classList.remove('visible');
+  errModalEl.classList.remove('open');
   outputEl.classList.remove('is-error');
 }
 
@@ -119,6 +124,94 @@ function writeOutput(text) {
   outputEl.classList.remove('flash');
   void outputEl.offsetWidth; // reflow to restart animation
   outputEl.classList.add('flash');
+  tagFormatted.style.display = '';
+}
+
+/* ════════════════════════════════════════
+   PRE-PROCESSING
+════════════════════════════════════════ */
+
+// Replace non-standard whitespace characters with regular spaces
+function normalizeSpaces(s) {
+  return s.replace(/[\u00A0\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ');
+}
+
+// Convert Python dict/list literals to JSON
+function pythonToJson(s) {
+  // Pass 1: convert single-quoted strings and tuples () -> []
+  let pass1 = '';
+  let i = 0;
+  while (i < s.length) {
+    const ch = s[i];
+    if (ch === "'") {
+      pass1 += '"';
+      i++;
+      while (i < s.length) {
+        const c = s[i];
+        if (c === '\\') {
+          const next = s[i + 1] || '';
+          if (next === "'")      { pass1 += "'";   i += 2; }  // \' -> '
+          else if (next === '"') { pass1 += '\\"';  i += 2; }  // \" -> \"
+          else                   { pass1 += c + next; i += 2; }
+        } else if (c === '"') { pass1 += '\\"'; i++;            // escape bare "
+        } else if (c === "'") { pass1 += '"';   i++; break;    // end of string
+        } else                { pass1 += c;     i++; }
+      }
+    } else if (ch === '"') {
+      // Double-quoted string — pass through verbatim
+      pass1 += ch; i++;
+      while (i < s.length) {
+        const c = s[i];
+        pass1 += c;
+        if (c === '\\' && i + 1 < s.length) { pass1 += s[i + 1]; i += 2; }
+        else { i++; if (c === '"') break; }
+      }
+    } else if (ch === '(') { pass1 += '['; i++;
+    } else if (ch === ')') { pass1 += ']'; i++;
+    } else { pass1 += ch; i++; }
+  }
+
+  // Pass 2: replace Python keywords outside strings
+  let result = '';
+  i = 0;
+  while (i < pass1.length) {
+    const ch = pass1[i];
+    if (ch === '"') {
+      result += ch; i++;
+      while (i < pass1.length) {
+        const c = pass1[i];
+        result += c;
+        if (c === '\\' && i + 1 < pass1.length) { result += pass1[i + 1]; i += 2; }
+        else { i++; if (c === '"') break; }
+      }
+    } else if (pass1.startsWith('True',  i) && !/\w/.test(pass1[i + 4] || '')) { result += 'true';  i += 4;
+    } else if (pass1.startsWith('False', i) && !/\w/.test(pass1[i + 5] || '')) { result += 'false'; i += 5;
+    } else if (pass1.startsWith('None',  i) && !/\w/.test(pass1[i + 4] || '')) { result += 'null';  i += 4;
+    } else { result += ch; i++; }
+  }
+
+  // Pass 3: remove trailing commas before } or ]
+  return result.replace(/,(\s*[}\]])/g, '$1');
+}
+
+// Add missing closing brackets/braces/quotes to make JSON complete
+function attemptFix(s) {
+  const stack = [];
+  let inStr = false, esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (esc)                          { esc = false; continue; }
+    if (ch === '\\' && inStr)         { esc = true;  continue; }
+    if (ch === '"')                   { inStr = !inStr; continue; }
+    if (inStr)                        { continue; }
+    if      (ch === '{')              { stack.push('}'); }
+    else if (ch === '[')              { stack.push(']'); }
+    else if ((ch === '}' || ch === ']') && stack.length && stack[stack.length - 1] === ch) { stack.pop(); }
+  }
+  let result = s;
+  if (inStr) result += '"';           // close open string
+  result += stack.reverse().join(''); // close open structures
+  return result;
 }
 
 /* ════════════════════════════════════════
@@ -127,17 +220,25 @@ function writeOutput(text) {
 function safeParse(raw) {
   const s = raw.trim();
   if (!s) throw new Error('Input is empty');
-  try {
-    return JSON.parse(s);
-  } catch (e) {
-    const m = e.message.match(/position (\d+)/);
+
+  // Try standard parse
+  try { return JSON.parse(s); } catch (firstErr) {
+    // Try with normalized whitespace
+    const ns = normalizeSpaces(s);
+    try { return JSON.parse(ns); } catch (_) {}
+
+    // Try Python dict conversion
+    try { return JSON.parse(pythonToJson(ns)); } catch (_) {}
+
+    // Report original error with location info
+    const m = firstErr.message.match(/position (\d+)/);
     if (m) {
       const pos  = parseInt(m[1], 10);
       const line = (s.slice(0, pos).match(/\n/g) || []).length + 1;
       const col  = pos - s.lastIndexOf('\n', pos - 1);
-      throw new Error('Line ' + line + ', col ' + col + ' — ' + e.message.split(' at ')[0]);
+      throw new Error('Line ' + line + ', col ' + col + ' — ' + firstErr.message.split(' at ')[0]);
     }
-    throw new Error(e.message);
+    throw new Error(firstErr.message);
   }
 }
 
@@ -210,16 +311,51 @@ function doUnescape() {
   } catch (e) { showError(e.message); }
 }
 
-function doClear() {
+function doFix() {
+  const raw = inputEl.value;
+  if (!raw.trim()) { showError('Input is empty'); return; }
+
+  // Already valid? Just format it
+  try {
+    const parsed = safeParse(raw);
+    const out = JSON.stringify(parsed, null, getIndent());
+    writeOutput(out);
+    setOk('Already valid — formatted', new Blob([out]).size);
+    return;
+  } catch (_) {}
+
+  // Apply fixes progressively
+  let candidate = normalizeSpaces(raw.trim());
+  try { candidate = pythonToJson(candidate); } catch (_) {}
+  candidate = candidate.replace(/,(\s*[}\]])/g, '$1');
+  candidate = attemptFix(candidate);
+
+  try {
+    const parsed = JSON.parse(candidate);
+    const out    = JSON.stringify(parsed, null, getIndent());
+    writeOutput(out);
+    const { keys, maxDepth } = stats(parsed);
+    setOk('Fixed · ' + out.split('\n').length + ' lines · ' + keys + ' keys · depth ' + maxDepth, new Blob([out]).size);
+  } catch (e) {
+    showError('Could not fix: ' + e.message.split(' at ')[0]);
+  }
+}
+
+function doClearInput() {
   inputEl.value = '';
+  clearError();
+  updateLN(inputEl, lnIn);
+  setReady();
+  inputEl.focus();
+}
+
+function doClearOutput() {
   outputEl.value = '';
   outputEl.classList.add('is-empty');
   outputEl.classList.remove('is-error', 'flash');
-  clearError();
-  updateLN(inputEl, lnIn);
+  tagFormatted.style.display = 'none';
   updateLN(outputEl, lnOut);
   setReady();
-  inputEl.focus();
 }
 
 async function doCopy() {
@@ -258,25 +394,11 @@ function doDownload() {
 }
 
 /* ════════════════════════════════════════
-   LIVE VALIDATION
+   INPUT
 ════════════════════════════════════════ */
-let liveTimer = null;
 inputEl.addEventListener('input', () => {
   updateLN(inputEl, lnIn);
-  clearTimeout(liveTimer);
-  liveTimer = setTimeout(() => {
-    const raw = inputEl.value.trim();
-    if (!raw) { clearError(); setReady(); return; }
-    try {
-      safeParse(raw);
-      clearError();
-      sDot.className = 's-dot ok';
-      sText.textContent = 'Valid JSON — Ctrl+Enter to format';
-      sSize.textContent = '';
-    } catch (e) {
-      if (raw.length > 4) showError(e.message);
-    }
-  }, 350);
+  clearError();
 });
 
 /* ════════════════════════════════════════
@@ -287,6 +409,7 @@ document.addEventListener('keydown', e => {
   if (mod && e.key === 'Enter')                       { e.preventDefault(); doFormat(); }
   if (mod && e.shiftKey && e.key.toUpperCase() === 'M') { e.preventDefault(); doMinify(); }
   if (mod && e.shiftKey && e.key.toUpperCase() === 'K') { e.preventDefault(); doSort(); }
+  if (mod && e.shiftKey && e.key.toUpperCase() === 'F') { e.preventDefault(); doFix(); }
 });
 
 // Tab key inserts spaces instead of tabbing away
@@ -306,7 +429,16 @@ document.getElementById('btn-format').addEventListener('click', doFormat);
 document.getElementById('btn-minify').addEventListener('click', doMinify);
 document.getElementById('btn-sort').addEventListener('click', doSort);
 document.getElementById('btn-unescape').addEventListener('click', doUnescape);
-document.getElementById('btn-clear').addEventListener('click', doClear);
+document.getElementById('btn-fix').addEventListener('click', doFix);
+
+/* Error detail modal */
+errBadge.addEventListener('click', () => errModalEl.classList.add('open'));
+document.getElementById('btn-err-modal-close').addEventListener('click',  () => errModalEl.classList.remove('open'));
+document.getElementById('btn-err-modal-close2').addEventListener('click', () => errModalEl.classList.remove('open'));
+document.getElementById('btn-fix-hint').addEventListener('click', () => { errModalEl.classList.remove('open'); doFix(); });
+errModalEl.addEventListener('click', e => { if (e.target === errModalEl) errModalEl.classList.remove('open'); });
+document.getElementById('btn-clear-input').addEventListener('click', doClearInput);
+document.getElementById('btn-clear-output').addEventListener('click', doClearOutput);
 document.getElementById('btn-copy').addEventListener('click', doCopy);
 document.getElementById('btn-paste').addEventListener('click', doPaste);
 document.getElementById('btn-download').addEventListener('click', doDownload);
@@ -323,7 +455,7 @@ creditsModal.addEventListener('click', e => {
   if (e.target === creditsModal) creditsModal.classList.remove('open');
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') creditsModal.classList.remove('open');
+  if (e.key === 'Escape') { creditsModal.classList.remove('open'); errModalEl.classList.remove('open'); }
 });
 
 /* ════════════════════════════════════════
@@ -332,3 +464,6 @@ document.addEventListener('keydown', e => {
 updateLN(inputEl, lnIn);
 updateLN(outputEl, lnOut);
 inputEl.focus();
+
+const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+document.getElementById('fmt-shortcut').textContent = isMac ? '⌘↵' : 'Ctrl+↵';

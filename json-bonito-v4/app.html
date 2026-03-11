@@ -81,13 +81,20 @@
     .header {
       display: flex;
       align-items: center;
-      gap: 14px;
       padding: 0 24px;
       height: 54px;
       flex-shrink: 0;
       background: var(--bg2);
       border-bottom: 1px solid var(--border);
     }
+    .header-left, .header-right {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header-right { justify-content: flex-end; }
+    .header-center { display: flex; align-items: center; gap: 7px; }
 
     .logo {
       font-family: var(--display);
@@ -99,24 +106,48 @@
     }
     .logo em { font-style: italic; color: var(--text); opacity: .6; }
 
-    .header-gap { flex: 1; }
-
-    /* error pill */
-    .error-pill {
+    /* error badge in input pane bar */
+    .err-badge {
       display: none;
       align-items: center;
-      gap: 8px;
+      gap: 5px;
       background: var(--red-bg);
       border: 1px solid var(--red);
       color: var(--red);
-      border-radius: 7px;
-      padding: 5px 13px;
-      font-size: 12px;
-      max-width: 500px;
+      border-radius: 5px;
+      padding: 2px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      flex: 1;
+      min-width: 0;
+      margin: 0 10px;
+      font-family: var(--mono);
+      transition: background .14s;
       animation: fadeSlide .18s ease;
     }
-    .error-pill.visible { display: flex; }
-    .error-pill .err-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .err-badge.visible { display: flex; }
+    .err-badge:hover { background: rgba(255,95,122,.18); }
+    .err-badge-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; flex: 1; }
+    .err-badge-details { margin-left: auto; padding-left: 10px; opacity: .7; text-decoration: underline; white-space: nowrap; flex-shrink: 0; }
+
+    /* error detail modal */
+    .err-modal-msg {
+      font-size: 13px;
+      color: var(--red);
+      background: var(--red-bg);
+      border: 1px solid var(--red);
+      border-radius: 8px;
+      padding: 14px 16px;
+      line-height: 1.6;
+      word-break: break-word;
+    }
+    .err-modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding-top: 4px;
+    }
+
     @keyframes fadeSlide {
       from { opacity:0; transform:translateY(-4px); }
       to   { opacity:1; transform:translateY(0); }
@@ -248,16 +279,6 @@
     .theme-btn.active { background: var(--accent); color: #111; }
     .theme-btn:not(.active):hover { color: var(--text); }
 
-    /* ── Toolbar ── */
-    .toolbar {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      padding: 9px 24px;
-      flex-shrink: 0;
-      background: var(--bg2);
-      border-bottom: 1px solid var(--border);
-    }
 
     .btn {
       display: inline-flex;
@@ -277,6 +298,13 @@
     .btn-primary { background: var(--accent); color: #111; border-color: var(--accent); }
     .btn-primary:hover { filter: brightness(1.1); box-shadow: 0 0 16px var(--accent-glow); }
     .btn-primary:active { transform: scale(.97); }
+    .btn-shortcut {
+      margin-left: 6px;
+      font-size: 10px;
+      font-weight: 400;
+      opacity: .6;
+      letter-spacing: .3px;
+    }
 
     .btn-ghost { background: transparent; color: var(--text2); border-color: var(--border); }
     .btn-ghost:hover { color: var(--text); border-color: var(--border2); background: var(--bg3); }
@@ -285,7 +313,6 @@
     .btn-red { background: transparent; color: var(--red); border-color: transparent; }
     .btn-red:hover { border-color: var(--red); background: var(--red-bg); }
 
-    .tb-sep { flex: 1; }
 
     .indent-wrap { display: flex; align-items: center; gap: 7px; color: var(--text2); font-size: 11px; }
     select {
@@ -321,7 +348,8 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 6px 16px;
+      padding: 0 16px;
+      height: 36px;
       background: var(--bg3);
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
@@ -423,21 +451,25 @@
 <body>
 
 <header class="header">
-  <div class="logo">Json <em>Bonito</em></div>
-
-  <div id="error-pill" class="error-pill">
-    <span>⚠</span>
-    <span class="err-text" id="error-msg"></span>
+  <div class="header-left">
+    <div class="logo">Json <em>Bonito</em></div>
   </div>
 
-  <div class="header-gap"></div>
-
-  <div class="theme-toggle">
-    <button class="theme-btn" id="btn-dark"  data-theme-set="dark"  title="Dark mode">🌙</button>
-    <button class="theme-btn" id="btn-light" data-theme-set="light" title="Light mode">☀️</button>
+  <div class="header-center">
+    <button class="btn btn-primary" id="btn-format"   title="Pretty-print JSON — Ctrl+Enter">⚡ Format<span class="btn-shortcut" id="fmt-shortcut"></span></button>
+    <button class="btn btn-ghost"   id="btn-minify"   title="Collapse to a single line — Ctrl+Shift+M">↔ Minify</button>
+    <button class="btn btn-ghost"   id="btn-sort"     title="Sort all object keys alphabetically — Ctrl+Shift+K">↕ Sort Keys</button>
+    <button class="btn btn-ghost"   id="btn-unescape" title="Unwrap a JSON-encoded string">↗ Unescape</button>
+    <button class="btn btn-ghost"   id="btn-fix"      title="Attempt to repair malformed JSON — Ctrl+Shift+F">⚙ Fix</button>
   </div>
 
-  <button class="credits-btn" id="btn-credits">© Credits</button>
+  <div class="header-right">
+    <div class="theme-toggle">
+      <button class="theme-btn" id="btn-dark"  data-theme-set="dark"  title="Dark mode">🌙</button>
+      <button class="theme-btn" id="btn-light" data-theme-set="light" title="Light mode">☀️</button>
+    </div>
+    <button class="credits-btn" id="btn-credits">© Credits</button>
+  </div>
 </header>
 
 <!-- ══ Credits / License Modal ══ -->
@@ -493,35 +525,42 @@ POSSIBILITY OF SUCH DAMAGE.</div>
 
     </div>
     <div class="modal-footer">
-      Json Bonito v3.0 · Beautiful JSON formatter for Firefox
+      Json Bonito v0.1 · Beautiful JSON formatter for Firefox
     </div>
   </div>
 </div>
 
-<div class="toolbar">
-  <button class="btn btn-primary" id="btn-format">⚡ Format</button>
-  <button class="btn btn-ghost"   id="btn-minify">↔ Minify</button>
-  <button class="btn btn-ghost"   id="btn-sort">↕ Sort Keys</button>
-  <button class="btn btn-ghost"   id="btn-unescape">↗ Unescape</button>
-  <div class="tb-sep"></div>
-  <div class="indent-wrap">
-    Indent
-    <select id="indent-size">
-      <option value="2" selected>2 spaces</option>
-      <option value="4">4 spaces</option>
-      <option value="tab">Tab</option>
-    </select>
+
+<!-- ══ Error Detail Modal ══ -->
+<div class="modal-overlay" id="modal-error">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="err-modal-title">
+    <div class="modal-header">
+      <span class="modal-title" id="err-modal-title" style="color:var(--red)">⚠ Parse Error</span>
+      <button class="modal-close" id="btn-err-modal-close" title="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="err-modal-msg" id="err-modal-msg"></div>
+      <div class="err-modal-actions">
+        <button class="btn btn-ghost" id="btn-err-modal-close2">Dismiss</button>
+        <button class="btn btn-primary" id="btn-fix-hint">⚙ Try Fix</button>
+      </div>
+    </div>
   </div>
-  <button class="btn btn-red" id="btn-clear">✕ Clear</button>
 </div>
 
 <div class="editors">
   <div class="pane">
     <div class="pane-bar">
       <span class="pane-title">Input</span>
+      <button class="err-badge" id="err-badge" title="Click to see full error">
+        <span>⚠</span>
+        <span class="err-badge-text" id="err-badge-text"></span>
+        <span class="err-badge-details">details</span>
+      </button>
       <div class="pane-actions">
         <span class="tag tag-input">RAW</span>
-        <button class="icon-btn" id="btn-paste">⎘ Paste</button>
+        <button class="icon-btn" id="btn-paste"       title="Paste from clipboard">⎘ Paste</button>
+        <button class="icon-btn" id="btn-clear-input" title="Clear input">✕ Clear</button>
       </div>
     </div>
     <div class="editor-wrap">
@@ -537,9 +576,18 @@ POSSIBILITY OF SUCH DAMAGE.</div>
     <div class="pane-bar">
       <span class="pane-title">Output</span>
       <div class="pane-actions">
-        <span class="tag tag-output">FORMATTED</span>
-        <button class="icon-btn" id="btn-copy">⎘ Copy</button>
-        <button class="icon-btn" id="btn-download">↓ Save</button>
+        <span class="tag tag-output" id="tag-formatted" style="display:none">FORMATTED</span>
+        <div class="indent-wrap" title="Indentation used when formatting">
+          Indent
+          <select id="indent-size">
+            <option value="2" selected>2 spaces</option>
+            <option value="4">4 spaces</option>
+            <option value="tab">Tab</option>
+          </select>
+        </div>
+        <button class="icon-btn" id="btn-clear-output" title="Clear output">✕ Clear</button>
+        <button class="icon-btn" id="btn-copy"         title="Copy output to clipboard">⎘ Copy</button>
+        <button class="icon-btn" id="btn-download" title="Download output as output.json">↓ Save</button>
       </div>
     </div>
     <div class="editor-wrap">
