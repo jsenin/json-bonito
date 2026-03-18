@@ -1,0 +1,14 @@
+{
+  "name": "json-bonito",
+  "version": "0.1.0",
+  "description": "Beautiful JSON formatter for Firefox",
+  "private": true,
+  "scripts": {
+    "lint": "eslint json-bonito-v4/*.js",
+    "test": "node json-bonito-v4/test.js",
+    "lint:fix": "eslint --fix json-bonito-v4/*.js"
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0"
+  }
+}
